@@ -4,13 +4,14 @@ import torch.nn as nn
 from torchvision import transforms, models
 from PIL import Image
 import numpy as np
+import cv2
 
 # App Configuration
 st.set_page_config(page_title="Face Mask Detector", page_icon="😷", layout="centered")
 st.title("😷 Real-Time Face Mask Detector")
 st.write("Upload an image or take a picture with your webcam to see if you are wearing a mask!")
 
-# Load Model (Cached for speed) 
+# Load Model (Cached for speed)
 @st.cache_resource
 def load_model():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -18,13 +19,14 @@ def load_model():
     num_ftrs = model.classifier[1].in_features
     model.classifier[1] = nn.Linear(num_ftrs, 2)
     
-    # Load the weights you trained in Phase 2
     model.load_state_dict(torch.load('saved_models/face_mask_mobilenetv2.pth', map_location=device))
     model = model.to(device)
     model.eval()
-    return model, device
+    
+    face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
+    return model, device, face_cascade
 
-model, device = load_model()
+model, device, face_cascade = load_model()
 
 # Image Preprocessing
 preprocess = transforms.Compose([
@@ -50,26 +52,49 @@ elif option == "Use Webcam":
     if camera_file is not None:
         image = Image.open(camera_file).convert('RGB')
 
-# Prediction Logic
+# Prediction & Drawing Logic
 if image is not None:
-    st.image(image, caption="Input Image", use_column_width=True)
     st.write("Analyzing...")
     
-    # Transform image and add batch dimension
-    input_tensor = preprocess(image).unsqueeze(0).to(device)
+    # Convert PIL Image to numpy array (RGB format for Streamlit)
+    img_array = np.array(image)
+    gray = cv2.cvtColor(img_array, cv2.COLOR_RGB2GRAY)
     
-    # Make Prediction
-    with torch.no_grad():
-        outputs = model(input_tensor)
-        probabilities = torch.nn.functional.softmax(outputs, dim=1)[0]
-        confidence, predicted_class = torch.max(probabilities, 0)
-        
-        class_idx = predicted_class.item()
-        conf_percent = confidence.item() * 100
-
-    # Display Results
-    st.markdown("### Result:")
-    if class_idx == 0:
-        st.success(f"✅ **{classes[class_idx]}** ({conf_percent:.2f}% confidence)")
+    # Detect faces
+    faces = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(60, 60))
+    
+    if len(faces) == 0:
+        st.warning("⚠️ No face detected in this image! Please upload a clear photo of a person.")
+        st.image(image, caption="Input Image", use_container_width=True)
     else:
-        st.error(f"🚨 **{classes[class_idx]}** ({conf_percent:.2f}% confidence)")
+        # Loop through all detected faces
+        for (x, y, w, h) in faces:
+            face_roi = img_array[y:y+h, x:x+w]
+            face_pil = Image.fromarray(face_roi)
+            
+            input_tensor = preprocess(face_pil).unsqueeze(0).to(device)
+            
+            with torch.no_grad():
+                outputs = model(input_tensor)
+                probabilities = torch.nn.functional.softmax(outputs, dim=1)[0]
+                confidence, predicted_class = torch.max(probabilities, 0)
+                
+                class_idx = predicted_class.item()
+                conf_percent = confidence.item() * 100
+            
+            # Draw bounding box and label
+            # Streamlit uses RGB: Green is (0, 255, 0), Red is (255, 0, 0)
+            color = (0, 255, 0) if class_idx == 0 else (255, 0, 0)
+            label = f"{classes[class_idx]} ({conf_percent:.1f}%)"
+            
+            cv2.rectangle(img_array, (x, y), (x+w, y+h), color, 3)
+            cv2.putText(img_array, label, (x, y-10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
+            
+        # Display the final augmented image
+        st.image(img_array, caption="Processed Image", use_container_width=True)
+        
+        # Summary text below
+        if class_idx == 0:
+            st.success("Analysis Complete: Mask Detected ✅")
+        else:
+            st.error("Analysis Complete: No Mask Detected 🚨")
