@@ -258,18 +258,6 @@ The project includes a Streamlit-based interface.
 * Confidence score display
 * Interactive interface
 
-### Demo
-
-```markdown
-![Application Screenshot](assets/app_demo.png)
-```
-
-### Real-Time Detection
-
-```markdown
-![Realtime Demo](assets/realtime_demo.gif)
-```
-
 ---
 
 # ⚙️ Installation
@@ -414,7 +402,7 @@ See the LICENSE file for details.
 
 # 👩‍💻 Author
 
-**Binuri Thathsarani**
+**Mummullage Binuri Umanda Thathsarani**
 
 Bachelor of Science (Hons) in Information Technology
 Specialization in Artificial Intelligence
